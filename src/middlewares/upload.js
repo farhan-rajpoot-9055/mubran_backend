@@ -6,9 +6,13 @@ import crypto from 'node:crypto';
 import sanitize from 'sanitize-filename';
 import { ApiError } from '../utils/ApiError.js';
 
-// On Netlify/Lambda the filesystem is read-only except /tmp
-const isLambda = !!(process.env.LAMBDA_TASK_ROOT || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const UPLOAD_DIR = isLambda
+// On Vercel/Lambda the filesystem is read-only except /tmp
+const isServerless = !!(
+  process.env.VERCEL ||
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME
+);
+const UPLOAD_DIR = isServerless
   ? path.join(os.tmpdir(), 'uploads')
   : path.resolve(process.cwd(), 'src/data/uploads');
 
