@@ -8,7 +8,7 @@ export const getPublicSettings = asyncHandler(async (_req, res) => {
   const settings = await getStoreSettings();
   const categories = await Category.find({ active: true }).sort({ sortOrder: 1, name: 1 }).select('name slug image');
   const {
-    heroSlides, announcement, storeName, tagline, whatsappNumber, currency, social, about, email, phone, address, seo, logo, favicon,
+    heroSlides, announcement, storeName, tagline, whatsappNumber, currency, social, about, email, phone, address, seo, logo, favicon, theme,
   } = settings;
   res.json({
     success: true,
@@ -27,12 +27,23 @@ export const getPublicSettings = asyncHandler(async (_req, res) => {
       phone,
       address,
       seo,
+      theme,
       categories,
     },
   });
 });
 
 const cleanUrl = (v) => String(v || '').replace(/["'<>\\]/g, '').trim();
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const cleanColor = (value, fallback) => (HEX_COLOR_RE.test(String(value || '')) ? value : fallback);
+const THEME_KEYS = [
+  'bg', 'bgDeep', 'surface', 'surface2', 'ink', 'inkSoft', 'inkMuted',
+  'primary', 'primaryDark', 'primaryDeep', 'primarySoft',
+  'accent', 'accentDark', 'accentSoft', 'line', 'lineStrong',
+  'wa', 'waDark', 'waSoft', 'danger', 'dangerSoft',
+  'success', 'successSoft', 'warning', 'warningSoft',
+];
 
 export const adminGetSettings = asyncHandler(async (req, res) => {
   const settings = await getStoreSettings();
@@ -82,6 +93,11 @@ export const adminUpdateSettings = asyncHandler(async (req, res) => {
     description: stripHtml(String(body.seo?.description ?? current.seo?.description).slice(0, 320)),
     keywords: stripHtml(String(body.seo?.keywords ?? current.seo?.keywords).slice(0, 400)),
   };
+
+  next.theme = {};
+  for (const key of THEME_KEYS) {
+    next.theme[key] = cleanColor(body.theme?.[key], current.theme?.[key] ?? DEFAULT_STORE_SETTINGS.theme[key]);
+  }
 
   await Settings.findOneAndUpdate({ key: 'store' }, { data: next }, { upsert: true });
   res.json({ success: true, data: next });
