@@ -72,6 +72,40 @@ const seed = async () => {
   if (!storeSettings.seo.title.includes('Pakistani') && config.store.name !== 'Pakistani Ladies Suits') {
     storeSettings.seo.title = `${config.store.name} – Premium Lawn, Cotton & Embroidered`;
   }
+  storeSettings.heroSlides = [
+    {
+      id: 'hero-1',
+      image: 'https://images.unsplash.com/photo-1638456265353-ecfff630cfd4?auto=format&fit=crop&w=1200&q=80',
+      title: 'New Collection 2026',
+      subtitle: 'Premium Pakistani Ladies Suits — Lawn, Cotton & Embroidered',
+      ctaText: 'Shop Now',
+      ctaLink: '/shop',
+    },
+    {
+      id: 'hero-2',
+      image: 'https://images.unsplash.com/photo-1729838734093-02c250060abc?auto=format&fit=crop&w=1200&q=80',
+      title: 'Bridal Collection',
+      subtitle: 'Elegant bridal wear for every special occasion',
+      ctaText: 'Explore Bridal',
+      ctaLink: '/shop',
+    },
+    {
+      id: 'hero-3',
+      image: 'https://images.unsplash.com/photo-1773439878258-3c5fa24afa75?auto=format&fit=crop&w=1200&q=80',
+      title: 'Embroidered Formals',
+      subtitle: 'Handcrafted embroidery, made for you',
+      ctaText: 'View Collection',
+      ctaLink: '/shop',
+    },
+    {
+      id: 'hero-4',
+      image: 'https://images.unsplash.com/photo-1705921266374-81743bc63a58?auto=format&fit=crop&w=1200&q=80',
+      title: 'Summer Lawn Sale',
+      subtitle: 'Fresh summer prints at unbeatable prices',
+      ctaText: 'Shop Sale',
+      ctaLink: '/shop',
+    },
+  ];
 
   await Settings.findOneAndUpdate({ key: 'store' }, { data: storeSettings }, { upsert: true });
   console.log('✓ Store settings seeded');
