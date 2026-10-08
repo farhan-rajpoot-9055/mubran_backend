@@ -27,7 +27,7 @@ export const config = {
   },
 
   store: {
-    name: process.env.STORE_NAME || 'Pakistani Ladies Suits',
+    name: process.env.STORE_NAME || 'My Store',
     whatsapp: process.env.STORE_WHATSAPP || '923001234567',
     currency: process.env.STORE_CURRENCY || 'PKR',
   },

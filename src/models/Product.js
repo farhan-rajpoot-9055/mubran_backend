@@ -10,12 +10,15 @@ const seoSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
   {
+    // Optional (not required) so existing single-store products, which have no
+    // storeId, keep validating/saving unchanged. Multi-tenant products set this;
+    // see src/models/Store.js and src/middlewares/tenant.js.
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },
     name: { type: String, required: [true, 'Product name is required'], trim: true, maxlength: 150 },
-    slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    slug: { type: String, required: true, lowercase: true, trim: true },
     sku: {
       type: String,
       required: [true, 'SKU is required'],
-      unique: true,
       uppercase: true,
       trim: true,
       maxlength: 50,
@@ -87,6 +90,12 @@ productSchema.index({ published: 1, featured: 1 });
 productSchema.index({ name: 'text', description: 'text', sku: 'text' });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ price: 1 });
+// Compound-unique per store (replaces the old single-field unique slug/sku,
+// which would otherwise stop two different stores from reusing the same
+// slug/SKU). Existing single-store products all share storeId: null, and
+// their slugs/SKUs were already globally unique, so this stays valid for them.
+productSchema.index({ storeId: 1, slug: 1 }, { unique: true });
+productSchema.index({ storeId: 1, sku: 1 }, { unique: true });
 
 export const Product = mongoose.model('Product', productSchema);
 export default Product;

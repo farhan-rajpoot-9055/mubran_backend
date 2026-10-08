@@ -4,33 +4,37 @@ import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { stripHtml } from '../utils/helpers.js';
 
-export const getPublicSettings = asyncHandler(async (_req, res) => {
-  const settings = await getStoreSettings();
-  const categories = await Category.find({ active: true }).sort({ sortOrder: 1, name: 1 }).select('name slug image');
+// Shared by the legacy unscoped public route and the new store-scoped route
+// (storeSettingsController.js).
+export const buildPublicSettingsPayload = async (storeId) => {
+  const settings = await getStoreSettings(storeId);
+  const categories = await Category.find({ active: true, storeId }).sort({ sortOrder: 1, name: 1 }).select('name slug image');
   const {
     heroSlides, announcement, storeName, tagline, whatsappNumber, currency, social, about, email, phone, address, seo, logo, favicon, theme,
   } = settings;
-  res.json({
-    success: true,
-    data: {
-      storeName,
-      tagline,
-      whatsappNumber,
-      currency,
-      announcement,
-      logo,
-      favicon,
-      heroSlides: (heroSlides || []).filter((s) => s.image || s.title),
-      about,
-      social,
-      email,
-      phone,
-      address,
-      seo,
-      theme,
-      categories,
-    },
-  });
+  return {
+    storeName,
+    tagline,
+    whatsappNumber,
+    currency,
+    announcement,
+    logo,
+    favicon,
+    heroSlides: (heroSlides || []).filter((s) => s.image || s.title),
+    about,
+    social,
+    email,
+    phone,
+    address,
+    seo,
+    theme,
+    categories,
+  };
+};
+
+export const getPublicSettings = asyncHandler(async (_req, res) => {
+  const data = await buildPublicSettingsPayload(null);
+  res.json({ success: true, data });
 });
 
 const cleanUrl = (v) => String(v || '').replace(/["'<>\\]/g, '').trim();
@@ -46,12 +50,13 @@ const THEME_KEYS = [
 ];
 
 export const adminGetSettings = asyncHandler(async (req, res) => {
-  const settings = await getStoreSettings();
+  const settings = await getStoreSettings(req.admin.storeId);
   res.json({ success: true, data: settings });
 });
 
 export const adminUpdateSettings = asyncHandler(async (req, res) => {
-  const current = await getStoreSettings();
+  const storeId = req.admin.storeId;
+  const current = await getStoreSettings(storeId);
   const body = req.body || {};
 
   const next = { ...current };
@@ -99,7 +104,7 @@ export const adminUpdateSettings = asyncHandler(async (req, res) => {
     next.theme[key] = cleanColor(body.theme?.[key], current.theme?.[key] ?? DEFAULT_STORE_SETTINGS.theme[key]);
   }
 
-  await Settings.findOneAndUpdate({ key: 'store' }, { data: next }, { upsert: true });
+  await Settings.findOneAndUpdate({ storeId, key: 'store' }, { data: next }, { upsert: true });
   res.json({ success: true, data: next });
 });
 
@@ -108,8 +113,8 @@ const cryptoRandom = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export const adminResetDefaultSettings = asyncHandler(async (_req, res) => {
-  await Settings.deleteOne({ key: 'store' });
+export const adminResetDefaultSettings = asyncHandler(async (req, res) => {
+  await Settings.deleteOne({ storeId: req.admin.storeId, key: 'store' });
   res.json({ success: true, data: { ...DEFAULT_STORE_SETTINGS } });
 });
 

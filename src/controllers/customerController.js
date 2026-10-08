@@ -9,7 +9,7 @@ export const adminListCustomers = asyncHandler(async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
   const q = String(req.query.q || '').trim();
 
-  const query = {};
+  const query = { storeId: req.admin.storeId };
   if (q) {
     query.$or = [
       { name: { $regex: q, $options: 'i' } },
@@ -25,7 +25,7 @@ export const adminListCustomers = asyncHandler(async (req, res) => {
   ]);
 
   const orderCounts = await Order.aggregate([
-    { $match: { customer: { $in: items.map((c) => c._id) } } },
+    { $match: { storeId: req.admin.storeId, customer: { $in: items.map((c) => c._id) } } },
     { $group: { _id: '$customer', orders: { $sum: 1 }, totalSpent: { $sum: '$subtotal' } } },
   ]);
   const map = Object.fromEntries(orderCounts.map((o) => [String(o._id), o]));
@@ -44,14 +44,14 @@ export const adminListCustomers = asyncHandler(async (req, res) => {
 });
 
 export const adminGetCustomer = asyncHandler(async (req, res) => {
-  const customer = await Customer.findById(req.params.id);
+  const customer = await Customer.findOne({ _id: req.params.id, storeId: req.admin.storeId });
   if (!customer) throw new ApiError(404, 'Customer not found');
-  const orders = await Order.find({ customer: customer._id }).sort({ createdAt: -1 });
+  const orders = await Order.find({ customer: customer._id, storeId: req.admin.storeId }).sort({ createdAt: -1 });
   res.json({ success: true, data: { ...customer.toObject(), orders } });
 });
 
 export const adminUpdateCustomer = asyncHandler(async (req, res) => {
-  const customer = await Customer.findById(req.params.id);
+  const customer = await Customer.findOne({ _id: req.params.id, storeId: req.admin.storeId });
   if (!customer) throw new ApiError(404, 'Customer not found');
 
   const clean = (v, max) => stripHtml(String(v ?? '').slice(0, max));
@@ -68,11 +68,11 @@ export const adminUpdateCustomer = asyncHandler(async (req, res) => {
 });
 
 export const adminDeleteCustomer = asyncHandler(async (req, res) => {
-  const orderCount = await Order.countDocuments({ customer: req.params.id });
+  const orderCount = await Order.countDocuments({ customer: req.params.id, storeId: req.admin.storeId });
   if (orderCount > 0) {
     throw new ApiError(409, 'Customer has order history and cannot be deleted');
   }
-  const customer = await Customer.findByIdAndDelete(req.params.id);
+  const customer = await Customer.findOneAndDelete({ _id: req.params.id, storeId: req.admin.storeId });
   if (!customer) throw new ApiError(404, 'Customer not found');
   res.json({ success: true, message: 'Customer deleted' });
 });

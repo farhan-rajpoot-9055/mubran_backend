@@ -14,6 +14,11 @@ import categoryRoutes from './routes/categories.js';
 import orderRoutes from './routes/orders.js';
 import adminRoutes from './routes/admin.js';
 import settingsRoutes from './routes/settings.js';
+import storeProductRoutes from './routes/storeProducts.js';
+import storeCategoryRoutes from './routes/storeCategories.js';
+import storeSettingsRoutes from './routes/storeSettings.js';
+import storeOrderRoutes from './routes/storeOrders.js';
+import { resolveStore } from './middlewares/tenant.js';
 
 const app = express();
 
@@ -72,6 +77,13 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
+// Multi-tenant: store-scoped public/storefront API, additive — every route
+// above (products/categories/orders/settings/admin) is untouched and keeps
+// serving the legacy single-store (storeId: null) data.
+app.use('/api/stores/:storeSlug/products', resolveStore, storeProductRoutes);
+app.use('/api/stores/:storeSlug/categories', resolveStore, storeCategoryRoutes);
+app.use('/api/stores/:storeSlug/settings', resolveStore, storeSettingsRoutes);
+app.use('/api/stores/:storeSlug/orders', resolveStore, storeOrderRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

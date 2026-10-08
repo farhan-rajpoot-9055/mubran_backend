@@ -15,7 +15,9 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
-    orderNumber: { type: String, required: true, unique: true, trim: true },
+    // Optional — see storeId comment in Product.js.
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },
+    orderNumber: { type: String, required: true, trim: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
     customerName: { type: String, required: true, trim: true, maxlength: 100 },
     customerWhatsapp: { type: String, trim: true, maxlength: 20, default: '' },
@@ -42,6 +44,7 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ customer: 1 });
+orderSchema.index({ storeId: 1, orderNumber: 1 }, { unique: true });
 
 export const OrderItem = mongoose.model('OrderItem', orderItemSchema);
 export const Order = mongoose.model('Order', orderSchema);

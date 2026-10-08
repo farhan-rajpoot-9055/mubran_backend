@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { protect } from '../middlewares/auth.js';
+import { protect, requireSuperAdmin } from '../middlewares/auth.js';
 import productController from '../controllers/productController.js';
 import categoryController from '../controllers/categoryController.js';
 import orderController from '../controllers/orderController.js';
@@ -7,11 +7,21 @@ import customerController from '../controllers/customerController.js';
 import settingsController from '../controllers/settingsController.js';
 import dashboardController from '../controllers/dashboardController.js';
 import uploadController from '../controllers/uploadController.js';
+import storeManagementController from '../controllers/storeManagementController.js';
 import { upload } from '../middlewares/upload.js';
 
 const router = Router();
 
 router.use(protect);
+
+// Platform-only: super admin managing the store list itself (not a store's
+// own data — every route below this uses req.admin.storeId to scope to the
+// logged-in admin's own store instead).
+router.get('/stores', requireSuperAdmin, storeManagementController.adminListStores);
+router.get('/stores/:id', requireSuperAdmin, storeManagementController.adminGetStore);
+router.post('/stores', requireSuperAdmin, storeManagementController.adminCreateStore);
+router.put('/stores/:id', requireSuperAdmin, storeManagementController.adminUpdateStore);
+router.patch('/stores/:id/status', requireSuperAdmin, storeManagementController.adminSetStoreStatus);
 
 router.get('/dashboard', dashboardController.getDashboardStats);
 

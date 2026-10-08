@@ -7,7 +7,11 @@ import { createSlug } from '../utils/helpers.js';
 
 const PAGE_SIZE = 12;
 
-const buildPublicQuery = async (req) => {
+// storeId: null for the legacy single-store route (only ever shows
+// storeId-less products); a real store's id for the store-scoped routes.
+// Passed explicitly (not via req) because it comes from the authenticated
+// tenant-resolution middleware, not user input.
+const buildPublicQuery = async (req, storeId = null) => {
   const {
     q,
     category,
@@ -19,7 +23,7 @@ const buildPublicQuery = async (req) => {
     published = 'true',
   } = req.query;
 
-  const query = {};
+  const query = { storeId };
   if (String(published) !== 'false') query.published = true;
 
   if (q && String(q).trim().length) {
@@ -30,7 +34,11 @@ const buildPublicQuery = async (req) => {
     if (mongoose.Types.ObjectId.isValid(String(category))) {
       query.category = mongoose.Types.ObjectId.createFromHexString(String(category));
     } else {
-      const resolved = await Category.findOne({ slug: String(category) }).select('_id');
+      // Scoped by storeId too — otherwise two stores sharing a category slug
+      // (e.g. both have "sale") would resolve to whichever store's category
+      // document happens to match first, breaking (not leaking, but wrong
+      // for) the filter on the other store.
+      const resolved = await Category.findOne({ slug: String(category), storeId }).select('_id');
       query.category = resolved ? resolved._id : mongoose.Types.ObjectId.createFromHexString('0'.repeat(24));
     }
   }
@@ -69,10 +77,12 @@ const parseSort = (sort) => {
   }
 };
 
-export const listProducts = asyncHandler(async (req, res) => {
+// Shared by the unscoped public routes (listProducts below) and the
+// store-scoped routes (storeProductController.js).
+export const fetchProductPage = async (req, storeId = null) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(60, Math.max(1, parseInt(req.query.pageSize, 10) || PAGE_SIZE));
-  const query = await buildPublicQuery(req);
+  const query = await buildPublicQuery(req, storeId);
   const sort = parseSort(req.query.sort);
 
   const [items, total] = await Promise.all([
@@ -84,6 +94,14 @@ export const listProducts = asyncHandler(async (req, res) => {
     Product.countDocuments(query),
   ]);
 
+  return { items, total, page, pageSize };
+};
+
+export const fetchPublicProductBySlug = (slug, storeId = null) =>
+  Product.findOne({ slug, published: true, storeId }).populate('category', 'name slug');
+
+export const listProducts = asyncHandler(async (req, res) => {
+  const { items, total, page, pageSize } = await fetchProductPage(req, null);
   res.json({
     success: true,
     data: items,
@@ -97,52 +115,59 @@ export const listProducts = asyncHandler(async (req, res) => {
 });
 
 export const getProductBySlug = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug, published: true }).populate(
-    'category',
-    'name slug'
-  );
+  const product = await fetchPublicProductBySlug(req.params.slug, null);
   if (!product) throw new ApiError(404, 'Product not found');
   res.json({ success: true, data: product });
 });
 
-export const getRelatedProducts = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug }).select('category');
-  if (!product) throw new ApiError(404, 'Product not found');
-
-  const related = await Product.find({
+export const fetchRelatedProducts = async (slug, storeId = null) => {
+  const product = await Product.findOne({ slug, storeId }).select('category');
+  if (!product) return null;
+  return Product.find({
     _id: { $ne: product._id },
     published: true,
+    storeId,
     ...(product.category ? { category: product.category } : {}),
   })
     .populate('category', 'name slug')
     .sort({ createdAt: -1 })
     .limit(8);
+};
 
+export const fetchFeaturedProducts = (storeId = null) =>
+  Product.find({ published: true, featured: true, storeId })
+    .populate('category', 'name slug')
+    .sort({ createdAt: -1 })
+    .limit(8);
+
+export const fetchNewArrivals = (storeId = null) =>
+  Product.find({ published: true, storeId })
+    .populate('category', 'name slug')
+    .sort({ createdAt: -1 })
+    .limit(8);
+
+export const getRelatedProducts = asyncHandler(async (req, res) => {
+  const related = await fetchRelatedProducts(req.params.slug, null);
+  if (!related) throw new ApiError(404, 'Product not found');
   res.json({ success: true, data: related });
 });
 
 export const getFeaturedProducts = asyncHandler(async (req, res) => {
-  const products = await Product.find({ published: true, featured: true })
-    .populate('category', 'name slug')
-    .sort({ createdAt: -1 })
-    .limit(8);
+  const products = await fetchFeaturedProducts(null);
   res.json({ success: true, data: products });
 });
 
 export const getNewArrivals = asyncHandler(async (req, res) => {
-  const products = await Product.find({ published: true })
-    .populate('category', 'name slug')
-    .sort({ createdAt: -1 })
-    .limit(8);
+  const products = await fetchNewArrivals(null);
   res.json({ success: true, data: products });
 });
 
-const uniqueSlug = async (slug, excludeId) => {
+const uniqueSlug = async (slug, storeId, excludeId) => {
   let candidate = slug;
   let n = 2;
   let exists = true;
   while (exists) {
-    const found = await Product.findOne({ slug: candidate, _id: { $ne: excludeId } }).select('_id');
+    const found = await Product.findOne({ slug: candidate, storeId, _id: { $ne: excludeId } }).select('_id');
     if (found) {
       candidate = `${slug}-${n}`;
       n += 1;
@@ -189,7 +214,7 @@ export const adminListProducts = asyncHandler(async (req, res) => {
   const category = req.query.category ? String(req.query.category) : '';
   const status = String(req.query.status || '');
 
-  const query = {};
+  const query = { storeId: req.admin.storeId };
   if (q) {
     query.$or = [
       { name: { $regex: q, $options: 'i' } },
@@ -220,38 +245,40 @@ export const adminListProducts = asyncHandler(async (req, res) => {
 });
 
 export const adminGetProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id).populate('category', 'name slug');
+  const product = await Product.findOne({ _id: req.params.id, storeId: req.admin.storeId }).populate('category', 'name slug');
   if (!product) throw new ApiError(404, 'Product not found');
   res.json({ success: true, data: product });
 });
 
 export const adminCreateProduct = asyncHandler(async (req, res) => {
+  const storeId = req.admin.storeId;
   const body = productPayload(req.body);
   if (!body.name || !body.sku) throw new ApiError(422, 'Name and SKU are required');
 
   if (body.category) {
-    const catExists = await Category.exists({ _id: body.category });
+    const catExists = await Category.exists({ _id: body.category, storeId });
     if (!catExists) throw new ApiError(400, 'Selected category does not exist');
   }
 
-  const slug = await uniqueSlug(createSlug(body.name) || 'product');
-  const product = await Product.create({ ...body, slug });
+  const slug = await uniqueSlug(createSlug(body.name) || 'product', storeId);
+  const product = await Product.create({ ...body, slug, storeId });
   res.status(201).json({ success: true, data: product });
 });
 
 export const adminUpdateProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const storeId = req.admin.storeId;
+  const product = await Product.findOne({ _id: req.params.id, storeId });
   if (!product) throw new ApiError(404, 'Product not found');
 
   const body = productPayload({ ...product.toObject(), ...req.body });
   if (body.category) {
-    const catExists = await Category.exists({ _id: body.category });
+    const catExists = await Category.exists({ _id: body.category, storeId });
     if (!catExists) throw new ApiError(400, 'Selected category does not exist');
   }
 
   const nameChanged = body.name && body.name !== product.name;
   let slug = product.slug;
-  if (nameChanged) slug = await uniqueSlug(createSlug(body.name) || 'product', product._id);
+  if (nameChanged) slug = await uniqueSlug(createSlug(body.name) || 'product', storeId, product._id);
 
   const updated = await Product.findByIdAndUpdate(
     product._id,
@@ -263,13 +290,13 @@ export const adminUpdateProduct = asyncHandler(async (req, res) => {
 });
 
 export const adminDeleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findByIdAndDelete(req.params.id);
+  const product = await Product.findOneAndDelete({ _id: req.params.id, storeId: req.admin.storeId });
   if (!product) throw new ApiError(404, 'Product not found');
   res.json({ success: true, message: 'Product deleted' });
 });
 
 export const adminPatchProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findOne({ _id: req.params.id, storeId: req.admin.storeId });
   if (!product) throw new ApiError(404, 'Product not found');
 
   const allowed = ['published', 'featured', 'stock', 'price', 'salePrice', 'stockShift', 'name', 'sku'];

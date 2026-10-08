@@ -23,14 +23,13 @@ export const protect = asyncHandler(async (req, _res, next) => {
   next();
 });
 
-export const adminOnly = (req, _res, next) => {
-  if (req.admin && req.admin.role === 'admin') return next();
-  next();
-};
-
-export const superAdminOnly = (req, _res, next) => {
-  if (req.admin && req.admin.role === 'super_admin') return next();
-  return next(new ApiError(403, 'Insufficient permissions.'));
+// Gate for platform-only routes (Store management). Every other admin route
+// scopes itself dynamically via req.admin.storeId instead of a role check —
+// see productController.js etc. — so this is the one place role actually
+// gates access.
+export const requireSuperAdmin = (req, _res, next) => {
+  if (req.admin?.role === 'super_admin') return next();
+  return next(new ApiError(403, 'Super admin access required.'));
 };
 
 export default protect;

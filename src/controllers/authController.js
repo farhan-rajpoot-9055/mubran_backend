@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { Admin } from '../models/Admin.js';
+import { Store } from '../models/Store.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { config } from '../config/index.js';
@@ -8,6 +9,15 @@ const signToken = (admin) =>
   jwt.sign({ id: admin._id, role: admin.role }, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
   });
+
+// The frontend needs the store's slug (not just its id) to build links to
+// the admin's own storefront and to label the admin panel correctly.
+const withStoreSlug = async (admin) => {
+  const safe = admin.toSafeJSON();
+  if (!admin.storeId) return safe;
+  const store = await Store.findById(admin.storeId).select('slug name');
+  return { ...safe, storeSlug: store?.slug || null, storeName: store?.name || null };
+};
 
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
@@ -23,11 +33,11 @@ export const login = asyncHandler(async (req, res) => {
   await admin.save({ validateBeforeSave: false });
 
   const token = signToken(admin);
-  res.json({ success: true, token, admin: admin.toSafeJSON() });
+  res.json({ success: true, token, admin: await withStoreSlug(admin) });
 });
 
 export const getMe = asyncHandler(async (req, res) => {
-  res.json({ success: true, admin: req.admin.toSafeJSON() });
+  res.json({ success: true, admin: await withStoreSlug(req.admin) });
 });
 
 export const changePassword = asyncHandler(async (req, res) => {

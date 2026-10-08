@@ -23,11 +23,26 @@ const adminSchema = new mongoose.Schema(
       enum: ['admin', 'super_admin'],
       default: 'admin',
     },
+    // The store this admin owns/manages. Required for role 'admin' (a store
+    // owner), must be null for 'super_admin' (the platform-wide manager) —
+    // enforced below so a stray/missing value fails validation clearly
+    // instead of surfacing as a confusing 403 later.
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },
     active: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+
+adminSchema.pre('validate', function (next) {
+  if (this.role === 'super_admin' && this.storeId) {
+    return next(new Error('super_admin accounts must not have a storeId'));
+  }
+  if (this.role === 'admin' && !this.storeId) {
+    return next(new Error('admin accounts must have a storeId'));
+  }
+  next();
+});
 
 adminSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
@@ -45,6 +60,7 @@ adminSchema.methods.toSafeJSON = function () {
     name: this.name,
     email: this.email,
     role: this.role,
+    storeId: this.storeId,
     active: this.active,
     lastLoginAt: this.lastLoginAt,
     createdAt: this.createdAt,

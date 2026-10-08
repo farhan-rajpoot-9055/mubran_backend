@@ -6,8 +6,10 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { generateOrderNumber } from '../services/orderNumber.js';
 import { stripHtml } from '../utils/helpers.js';
 
-export const createWhatsappOrder = asyncHandler(async (req, res) => {
-  const { name, whatsapp, city, address, notes, items } = req.body;
+// Shared by the legacy unscoped route and the new store-scoped route
+// (storeOrderController.js) — storeId is null for the legacy storefront.
+export const processWhatsappOrder = async (body, storeId) => {
+  const { name, whatsapp, city, address, notes, items } = body;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw new ApiError(422, 'Order must contain at least one item');
@@ -22,12 +24,11 @@ export const createWhatsappOrder = asyncHandler(async (req, res) => {
   for (const item of items) {
     const qty = Math.max(1, Math.min(99, parseInt(item.quantity, 10) || 1));
     let product = null;
-    let snapshot = {};
 
     if (item.productId && String(item.productId).match(/^[a-f\d]{24}$/i)) {
-      product = await Product.findById(item.productId);
+      product = await Product.findOne({ _id: item.productId, storeId });
     } else if (item.sku) {
-      product = await Product.findOne({ sku: String(item.sku).toUpperCase() });
+      product = await Product.findOne({ sku: String(item.sku).toUpperCase(), storeId });
     }
 
     if (!product) continue;
@@ -40,15 +41,14 @@ export const createWhatsappOrder = asyncHandler(async (req, res) => {
     }
 
     const price = product.salePrice && product.salePrice < product.price ? product.salePrice : product.price;
-    snapshot = {
+    enriched.push({
       product: product._id,
       name: product.name,
       sku: product.sku,
       price,
       quantity: qty,
       image: product.images?.[0] || '',
-    };
-    enriched.push(snapshot);
+    });
     subtotal += price * qty;
   }
 
@@ -58,12 +58,13 @@ export const createWhatsappOrder = asyncHandler(async (req, res) => {
 
   let customer = null;
   const whatsappClean = stripHtml(String(whatsapp || '').replace(/\D/g, '').slice(0, 20));
-  const emailClean = stripHtml(String(req.body.email || '').slice(0, 120));
+  const emailClean = stripHtml(String(body.email || '').slice(0, 120));
 
   if (whatsappClean) {
-    customer = await Customer.findOne({ whatsapp: whatsappClean });
+    customer = await Customer.findOne({ whatsapp: whatsappClean, storeId });
     if (!customer) {
       customer = await Customer.create({
+        storeId,
         name: customerName,
         whatsapp: whatsappClean,
         city: stripHtml(String(city || '').slice(0, 60)),
@@ -78,8 +79,9 @@ export const createWhatsappOrder = asyncHandler(async (req, res) => {
     }
   }
 
-  const orderNumber = await generateOrderNumber();
+  const orderNumber = await generateOrderNumber(storeId);
   const order = await Order.create({
+    storeId,
     orderNumber,
     customer: customer?._id || null,
     customerName,
@@ -92,6 +94,11 @@ export const createWhatsappOrder = asyncHandler(async (req, res) => {
     notes: stripHtml(String(notes || '').slice(0, 2000)),
   });
 
+  return order;
+};
+
+export const createWhatsappOrder = asyncHandler(async (req, res) => {
+  const order = await processWhatsappOrder(req.body, null);
   res.status(201).json({
     success: true,
     message: 'Order request received',
@@ -121,7 +128,7 @@ export const adminListOrders = asyncHandler(async (req, res) => {
   const status = String(req.query.status || '');
   const q = String(req.query.q || '').trim();
 
-  const query = {};
+  const query = { storeId: req.admin.storeId };
   if (status) query.status = status;
   if (q) {
     query.$or = [
@@ -148,13 +155,13 @@ export const adminListOrders = asyncHandler(async (req, res) => {
 });
 
 export const adminGetOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id).populate('customer');
+  const order = await Order.findOne({ _id: req.params.id, storeId: req.admin.storeId }).populate('customer');
   if (!order) throw new ApiError(404, 'Order not found');
   res.json({ success: true, data: order });
 });
 
 export const adminUpdateOrderStatus = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id);
+  const order = await Order.findOne({ _id: req.params.id, storeId: req.admin.storeId });
   if (!order) throw new ApiError(404, 'Order not found');
   const status = String(req.body.status || '');
   const allowed = ['pending', 'in_review', 'confirmed', 'fulfilled', 'cancelled'];
@@ -166,7 +173,7 @@ export const adminUpdateOrderStatus = asyncHandler(async (req, res) => {
 });
 
 export const adminDeleteOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findByIdAndDelete(req.params.id);
+  const order = await Order.findOneAndDelete({ _id: req.params.id, storeId: req.admin.storeId });
   if (!order) throw new ApiError(404, 'Order not found');
   res.json({ success: true, message: 'Order deleted' });
 });

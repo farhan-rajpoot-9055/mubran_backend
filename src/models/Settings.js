@@ -2,17 +2,25 @@ import mongoose from 'mongoose';
 
 const settingsSchema = new mongoose.Schema(
   {
-    key: { type: String, required: true, unique: true },
+    // Optional — null means the legacy single-store settings doc (unchanged
+    // behavior). One settings doc per store once storeId is set.
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },
+    key: { type: String, required: true },
     data: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
 
+settingsSchema.index({ storeId: 1, key: 1 }, { unique: true });
+
 export const Settings = mongoose.model('Settings', settingsSchema);
 
+// Business-agnostic — a freshly created store (any product category, not
+// just fashion) starts from these until its owner customizes them via
+// Admin → Settings.
 export const DEFAULT_STORE_SETTINGS = {
-  storeName: 'Pakistani Ladies Suits',
-  tagline: 'Elegant styles for every occasion',
+  storeName: 'My Store',
+  tagline: 'Quality products, easy ordering',
   currency: 'PKR',
   whatsappNumber: '',
   email: '',
@@ -25,16 +33,16 @@ export const DEFAULT_STORE_SETTINGS = {
     {
       id: 'hero-1',
       image: '',
-      title: 'New Collection',
-      subtitle: 'Elegant styles for every occasion',
+      title: 'Welcome to our store',
+      subtitle: 'Quality products, easy ordering',
       ctaText: 'Shop Now',
       ctaLink: '/shop',
     },
     {
       id: 'hero-2',
       image: '',
-      title: 'Premium Lawn & Cotton',
-      subtitle: 'Handpicked seasonal fabrics, made for you',
+      title: 'New Arrivals',
+      subtitle: 'Check out what just landed',
       ctaText: 'Explore Collection',
       ctaLink: '/shop',
     },
@@ -74,19 +82,15 @@ export const DEFAULT_STORE_SETTINGS = {
     youtube: '',
   },
   seo: {
-    title: 'Pakistani Ladies Suits – Premium Lawn, Cotton & Embroidered',
-    description:
-      'Shop premium Pakistani ladies suits — 2 piece, 3 piece, lawn, cotton and embroidered outfits at the best prices. Order easily on WhatsApp.',
-    keywords: 'ladies suits, pakistani suits, lawn, cotton, embroidered, 2 piece suit, 3 piece suit',
+    title: 'My Store – Shop Online',
+    description: 'Browse our full range of products and order easily on WhatsApp.',
+    keywords: '',
   },
 };
 
-export const getStoreSettings = async () => {
-  let doc = await Settings.findOne({ key: 'store' }).lean();
-  if (!doc) {
-    doc = { key: 'store', data: { ...DEFAULT_STORE_SETTINGS } };
-  }
-  return { ...DEFAULT_STORE_SETTINGS, ...(doc.data || {}) };
+export const getStoreSettings = async (storeId = null) => {
+  const doc = await Settings.findOne({ storeId, key: 'store' }).lean();
+  return { ...DEFAULT_STORE_SETTINGS, ...(doc?.data || {}) };
 };
 
 export default Settings;
